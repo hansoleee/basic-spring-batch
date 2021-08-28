@@ -146,7 +146,7 @@ spring:
 메타데이터 테이블인 BATCH_JOB_INSTANCE가 존재하지 않는다는 에러와 함께 배치 어플리케이션이 종료되었다는 것을 알 수 있습니다.
 
 메타데이터 테이블은 위에 말씀드린 것처럼 schema-mysql.sql 파일을 검색하고 해당 SQL문을 사용하는 DB에서 실행해줍니다.
-<img height="100%" src="./images/배치실행결과04" width="100%"/>
+![](images/배치실행결과04.png)
 
 그리고 테이블이 잘 생성되었는지 확인해봅니다.
 <img height="100%" src="./images/배치실행결과05.png" width="100%"/>
