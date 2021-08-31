@@ -1465,3 +1465,73 @@ Job Parameter를 각각의 Batch Component들이 사용하면 되니 **변경이
 
 이 proxyMode로 인해서 문제가 발생할 수 있습니다.  
 어떤 문제가 있고, 어떻게 해결하면 될지는 이전에 작성한 [@StepScope 사용시 주의 사항](https://jojoldu.tistory.com/132) 을 꼭 참고해보세요.
+***
+
+## Chunk 지향 처리
+Spring Batch의 큰 장점 중 하나로 Chunk 지향 처리를 얘기합니다.  
+이번 시간에는 Chunk 지향 처리가 무엇인지 한번 살펴보겠습니다.  
+
+### Chunk?
+Spring Batch에서의 Chunk란 데이터 덩어리로 작업할 때 **각 커밋 사이에 처리되는 row 수**를 얘기합니다.  
+즉, Chunk 지향 처리란 **한 번에 하나씩 데이터를 읽어 Chunk라는 덩어리를 만든 뒤, Chunk 단위로 트랜잭션**을 다루는 것을 의미합니다.  
+
+여기서 트랜잭션이라는 것이 중요합니다.  
+Chunk 단위로 트랜잭션을 수행하기 때문에 **실패할 경우엔 해당 Chunk 만큼만 롤백**이 되고, 이전에 커밋된 트랜잭션 범위까지는 반영이 된다는 것 입니다.
+
+Chunk 지향 처리는 Chunk 단위로 데이터를 처리하기 때문에 그림으로 표현하면 아래와 같습니다.  
+![](images/Chunk처리과정01.png)
+
+>[개별 Item 처리 과정](https://docs.spring.io/spring-batch/docs/4.3.x/reference/html/index-single.html#chunkOrientedProcessing) 
+
+- Reader에서 데이터를 하나 읽어옵니다. 
+- 읽어온 데이터를 Processor에서 가공합니다. 
+- 가공된 데이터들을 별도의 공간에 모은 뒤, Chunk 단위만큼 쌓이게 되면 Writer에 전달하고 Writer는 일괄 저장합니다. 
+
+**Reader와 Processor에서는 1건씩 다뤄지고, Writer에선 Chunk 단위로 처리**된다는 것만 기억하시면 됩니다. 
+
+Chunk 지향 처리를 Java 코드로 표현하면 아래처럼 될 것 같습니다.
+```java
+for (int i = 0; i < totalSize; i += chunkSize) { // chunkSize 단위로 묶어서 처리
+    List items = new ArrayList<>();
+    for (int j = 0; j < chunkSize; j++) {
+        Object item = itemReader.read();
+        Object processedItem = itemProcessor.process(item);
+        items.add(processedItem);
+    }
+    itemWriter.write(items);
+}
+```
+**chunkSize별로 묶어서 처리**된다는 의미를 이해하셨나요?  
+자 그럼 이제 Chunk 지향 처리가 어떻게 되고 있는지 실제 Spring Batch 내부 코드를 보면서 알아보겠습니다.  
+
+### ChunkOrientedTasklet 엿보기
+Chunk 지향 처리의 전체 로직을 다루는 것은 ChunkOrientedTasklet 클래스입니다.  
+클래스 이름만 봐도 어떤 일을 하는지 단번에 알 수 있을것 같습니다. 
+
+![](images/ChunkOrientedTasklet코드01.png)
+
+여기서 자세히 보셔야할 코드는 execute() 입니다.  
+Chunk 단위로 작업하기 위한 전체 코드가 이곳에 있다고 보시면 됩니다.  
+내부 코드는 아래와 같습니다.  
+
+![](images/ChunkOrientedTasklet코드02.png)
+
+- `chunkProvider.provide()`로 Reader에서 Chunk size만큼 데이터를 가져옵니다.  
+- `chunkProcessor.process()`에서 Reader로 받은 데이터를 가공(Processor)하고 저장(Writer)합니다. 
+
+데이터를 가져오는 `chunkProvider.provide()`를 가보시면 어떻게 데이터를 가져오는지 알 수 있습니다.  
+
+![](images/SimpleChunkProvider코드01.png)
+
+`inputs`이 ChunkSize만큼 쌓일때까지 read()를 호출합니다.  
+이 `read()`는 내부를 보시면 실제로는 `ItemReder.read`를 호출합니다.  
+
+![](images/SimpleChunkProvider코드02.png)
+
+![](images/SimpleChunkProvider코드03.png)
+
+즉, `ItemReader.read`에서 1건씩 데이터를 조회해 ChunkSize만큼 데이터를 쌓는 것이 `provider()`가 하는 일입니다.
+
+자 그럼 이렇게 쌓아준 데이터를 어떻게 가공하고 저장하는지 한번 확인해보겠습니다.  
+
+
