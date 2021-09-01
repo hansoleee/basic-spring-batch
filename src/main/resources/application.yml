@@ -4,6 +4,9 @@ spring:
   batch:
     job:
       names: ${job.name:NONE}
+
+logging.level:
+  org.springframework.batch: DEBUG
 ---
 spring:
   profiles: local

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-//@StepScope
+@StepScope
 public class TaskletDiJobJobTasklet implements Tasklet {
 
     @Value("#{jobParameters[requestDate]}")
