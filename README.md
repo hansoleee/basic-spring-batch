@@ -2606,3 +2606,179 @@ public class CustomItemWriterJobConfiguration {
 ItemWriter를 사용할 때 **Processor에서 Writer에 List를 전달**하고 싶은 때가 있습니다.  
 이때 ItemWriter의 제네릭을 List로 선언해서는 문제를 해결할 수 없는데요.  
 해결할 수 있는 방법은 [Writer에 List형 Item을 전달하고 싶을 때 by jojoldu](https://jojoldu.tistory.com/140) 
+
+## ItemProcessor
+***
+7, 8장에서는 Chunk 지향 처리에서의 데이터 읽기와 쓰기 부분을 알아 보았습니다.  
+이번 챕터에서는 읽기와 쓰기가 아닌, **가공(또는 처리) 단계**를 알아보겠습니다.  
+바로 **ItemProcessor**입니다.  
+
+여기서 한가지 드리고 싶은 말씀은 **ItemProcessor는 필수가 아니라는 점**입니다.  
+ItemProcessor는 데이터를 가공하거나 필터링하는 역할을 합니다.  
+이는 **Writer 부분에서도 충분히 구현 가능**합니다.  
+
+그럼에도 ItemProcessor를 쓰는 것은 Reader, Writer와는 별도의 단계로 분리되었기 때문에 **비즈니스 코드가 섞이는 것을 방지**해주기 때문입니다.  
+
+그래서 일반적으로 배치 어플리케이션에서 비즈니스 로직을 추가할 때는 가장 먼저 Processor를 고려해보시는 것을 추천합니다.  
+**각 계층(읽기/처리/쓰기)를 분리할 수 있는 좋은 방법**입니다.  
+
+이번 챕터에서 알아볼 내용은 다음과 같습니다.  
+- process 단계에서 처리할 수 있는 비즈니스 로직의 종류
+- Chunk 지향 처리에서 itemProcessor를 구성하는 방법
+- Spring Batch와 함께 제공되는 ItemProcessor 구현
+
+시작해 보겠습니다.
+
+### ItemProcessor 소개
+ItemProcessor는 **Reader에서 넘겨준 데이터 개별 건을 가공/처리**합니다.  
+ChunkSize 단위로 묶은 데이터를 한 번에 처리하는 ItemWriter와는 대조됩니다.  
+![](images/ItemProcessor처리과정01.png)
+
+일반적으로 ItemProcessor를 사용하는 방법은 2가지 입니다.  
+- 변환
+  - Reader에서 읽은 데이터를 원하는 타입으로 변환해서 Writer에 넘겨줄 수 있습니다.
+- 필터
+  - Reader에서 넘겨준 데이터를 Writer로 넘겨줄 것인지를 결정할 수 있습니다.  
+  - `null`을 반환하면 **Writer에 전달되지 않습니다.**
+
+위 2가지 사례를 차례로 배워보겠습니다.  
+
+### 기본 사용법
+ItemProcessor 인터페이스는 두 개의 제네릭 타입이 필요합니다.
+![](images/ItemProcessor코드01.png)
+
+- I
+  - ItemReader에서 받을 타입
+- O
+  - ItemWriter에 보낼 데이터 타입
+
+Reader에서 읽은 데이터가 ItemProcessor의 `process`를 통과해서 Writer에 전달됩니다.
+
+구현해야할 메소드는 `process` 하나입니다.  
+자바8부터는 인터페이스의 추상 메소드가 1개일 경우 **람다식을 사용**할 수 있습니다.  
+ItemProcessor 역시 `process`만 있기 때문에 람다식을 사용할 수 있습니다.  
+
+그래서 많은 배치들이 ItemProcessor를 다음과 같이 **익명 클래스 또는 람다식을 자주 사용**합니다.  
+
+```java
+@Bean(BEAN_PREFIX + "processor")
+@StepScope
+public ItemProcessor<ReadType, WriteType> processor() {
+    return item -> {
+        item.convert();
+        return item;
+    }
+}
+```
+익명 클래스 또는 람다식을 사용하는 이유는 다음과 같습니다.  
+- 행사 코드(불필요한 코드)가 없어 구현 코드 양이 적습니다.  
+  - 빠르게 구현 가능합니다.  
+- 고정된 형태가 없어 원하는 형태의 어떤 처리도 가능합니다.  
+
+다만 단점도 있습니다.  
+- Batch Config 클래스 안에 포함되어 있어야만 해서 Batch Config의 코드 양이 많아질 수 있습니다.
+
+위 단점으로 인해 보통 코드 양이 많아지면 별도 클래스 (ItemProcess의 구현체)로 processor를 분리해서 쓰기도 합니다.  
+
+### 변환  
+첫 번째로 알아볼 예제는 **반환**입니다.  
+즉, Reader에서 읽은 타입을 변환하여 Writer에 전달해주는 것을 얘기합니다.  
+
+아래 코드는 Teacher라는 도메인 클래스를 읽어와 name 필드 (String 타입)을 Writer에 넘겨주도록 구성한 코드입니다.
+
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.domain.Teacher;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.JobScope;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.persistence.EntityManagerFactory;
+
+@Slf4j
+@RequiredArgsConstructor
+@Configuration
+public class ProcessorConvertJobConfiguration {
+
+  public static final String JOB_NAME = "ProcessorConvertBatch";
+  public static final String BEAN_PREFIX = JOB_NAME + "_";
+
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final EntityManagerFactory emf;
+
+  @Value("${chunkSize:1000}")
+  private int chunkSize;
+
+  @Bean(JOB_NAME)
+  public Job job() {
+    return jobBuilderFactory.get(JOB_NAME)
+            .preventRestart()
+            .start(step())
+            .build();
+  }
+
+  @Bean(BEAN_PREFIX + "step")
+  @JobScope
+  public Step step() {
+    return stepBuilderFactory.get(BEAN_PREFIX + "step")
+            .<Teacher, String>chunk(chunkSize)
+            .reader(reader())
+            .processor(processor())
+            .writer(writer())
+            .build();
+  }
+
+  @Bean
+  public JpaPagingItemReader<Teacher> reader() {
+    return new JpaPagingItemReaderBuilder<Teacher>()
+            .name(BEAN_PREFIX + "reader")
+            .entityManagerFactory(emf)
+            .pageSize(chunkSize)
+            .queryString("SELECT t FROM Teacher t")
+            .build();
+  }
+
+  @Bean
+  public ItemProcessor<Teacher, String> processor() {
+    return Teacher::getName;
+  }
+
+  private ItemWriter<String> writer() {
+    return items -> {
+      for (String item : items) {
+        log.info("Teacher Name={}", item);
+      }
+    };
+  }
+}
+```
+
+ItemProcessor에서는 Reader에서 읽어올 타입이 `Teacher`이며, Writer에서 넘겨줄 타입이 `String`이기 때문에 제네릭 타입은 <Teacher, String>이 됩니다. 
+```java
+@Bean
+public ItemProcessor<Teacher, String> processor() {
+    return Teacher::getName;
+}
+```
+
+여기서 ChunkSize 앞에 선언될 타입 역시 Reader와 Wirter 타입을 따라가야하기 때문에 다음과 같이 선언됩니다.  
+```text
+.<Teacher, String>chunk(chunkSize)
+```
+
+위 코드를 실행해보겠습니다.    
+아래와 같이 Writer에서 실행하는 `log.info("Teacher Name={}", item)`가 아주 잘 수행되었음을 확인할 수 있습니다.  
+
