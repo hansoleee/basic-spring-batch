@@ -2782,3 +2782,4 @@ public ItemProcessor<Teacher, String> processor() {
 위 코드를 실행해보겠습니다.    
 아래와 같이 Writer에서 실행하는 `log.info("Teacher Name={}", item)`가 아주 잘 수행되었음을 확인할 수 있습니다.  
 
+![](images/ProcessorConvertJobConfiguration실행결과01.png)

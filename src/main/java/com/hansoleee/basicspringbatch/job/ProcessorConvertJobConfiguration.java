@@ -37,23 +37,23 @@ public class ProcessorConvertJobConfiguration {
     public Job job() {
         return jobBuilderFactory.get(JOB_NAME)
                 .preventRestart()
-                .start(processorConvertBatchStep())
+                .start(step())
                 .build();
     }
 
     @Bean(BEAN_PREFIX + "step")
     @JobScope
-    public Step processorConvertBatchStep() {
+    public Step step() {
         return stepBuilderFactory.get(BEAN_PREFIX + "step")
                 .<Teacher, String>chunk(chunkSize)
-                .reader(processorConvertBatchReader())
-                .processor(processorConvertBatchProcessor())
-                .writer(processorConvertBatchWriter())
+                .reader(reader())
+                .processor(processor())
+                .writer(writer())
                 .build();
     }
 
     @Bean
-    public JpaPagingItemReader<Teacher> processorConvertBatchReader() {
+    public JpaPagingItemReader<Teacher> reader() {
         return new JpaPagingItemReaderBuilder<Teacher>()
                 .name(BEAN_PREFIX + "reader")
                 .entityManagerFactory(emf)
@@ -63,11 +63,11 @@ public class ProcessorConvertJobConfiguration {
     }
 
     @Bean
-    public ItemProcessor<Teacher, String> processorConvertBatchProcessor() {
+    public ItemProcessor<Teacher, String> processor() {
         return Teacher::getName;
     }
 
-    private ItemWriter<String> processorConvertBatchWriter() {
+    private ItemWriter<String> writer() {
         return items -> {
             for (String item : items) {
                 log.info("Teacher Name={}", item);
