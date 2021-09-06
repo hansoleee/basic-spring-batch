@@ -1,7 +1,7 @@
 package com.hansoleee.basicspringbatch.job;
 
 import com.hansoleee.basicspringbatch.entity.Teacher;
-import lombok.RequiredArgsConstructor;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
@@ -19,11 +19,11 @@ import org.springframework.context.annotation.Configuration;
 import javax.persistence.EntityManagerFactory;
 
 @Slf4j
-@RequiredArgsConstructor
 @Configuration
-public class ProcessorConvertJobConfiguration {
+@RequiredArgsConstructor
+public class TxProcessorJobConfiguration {
 
-    public static final String JOB_NAME = "ProcessorConvertBatch";
+    public static final String JOB_NAME = "txProcessorJob";
     public static final String BEAN_PREFIX = JOB_NAME + "_";
 
     private final JobBuilderFactory jobBuilderFactory;
@@ -36,7 +36,6 @@ public class ProcessorConvertJobConfiguration {
     @Bean(JOB_NAME)
     public Job job() {
         return jobBuilderFactory.get(JOB_NAME)
-                .preventRestart()
                 .start(step())
                 .build();
     }
@@ -45,14 +44,14 @@ public class ProcessorConvertJobConfiguration {
     @JobScope
     public Step step() {
         return stepBuilderFactory.get(BEAN_PREFIX + "step")
-                .<Teacher, String>chunk(chunkSize)
+                .<Teacher, ClassInformation>chunk(chunkSize)
                 .reader(reader())
                 .processor(processor())
                 .writer(writer())
                 .build();
     }
 
-    @Bean
+    @Bean(BEAN_PREFIX + "reader")
     public JpaPagingItemReader<Teacher> reader() {
         return new JpaPagingItemReaderBuilder<Teacher>()
                 .name(BEAN_PREFIX + "reader")
@@ -62,16 +61,25 @@ public class ProcessorConvertJobConfiguration {
                 .build();
     }
 
-    @Bean
-    public ItemProcessor<Teacher, String> processor() {
-        return Teacher::getName;
+    public ItemProcessor<Teacher, ClassInformation> processor() {
+        return teacher -> new ClassInformation(teacher.getName(), teacher.getStudentList().size());
     }
 
-    private ItemWriter<String> writer() {
+    public ItemWriter<ClassInformation> writer() {
         return items -> {
-            for (String item : items) {
-                log.info("Teacher Name={}", item);
+            for (ClassInformation classInformation : items) {
+                log.info(">>>>> 반 정보={}", classInformation);
             }
         };
+    }
+
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Getter
+    @Setter
+    @ToString
+    static class ClassInformation {
+        private String teacherName;
+        private long theNumberOfStudents;
     }
 }

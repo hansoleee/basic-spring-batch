@@ -1,7 +1,7 @@
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
-import com.hansoleee.basicspringbatch.domain.Pay2;
+import com.hansoleee.basicspringbatch.entity.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay2;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;

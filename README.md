@@ -1,6 +1,6 @@
 # 출처
 [jojoldu님의 Spring Batch 가이드](https://jojoldu.tistory.com/325?category=902551)   
-아래의 작성된 내용은 jojoldu 님의 글의 거의 모든 부분을 Copy 한 것임을 알려드립니다.
+아래의 작성된 내용은 jojoldu 님의 Batch 글을 바탕으로 학습을 위해 작성한 것을 알려드립니다.
 ***
 
 # 아주 간단한 실습 (Hello World)
@@ -1755,8 +1755,9 @@ JdbcCursorItemReader는 Cursor 기반의 JDBC Reader 구현체입니다.
 아래 샘플 코드를 바로 보겠습니다.  
 
 ###### Pay.java
+
 ```java
-package com.hansoleee.basicspringbatch.domain;
+package com.hansoleee.basicspringbatch.entity;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -1776,38 +1777,39 @@ import java.time.format.DateTimeFormatter;
 @ToString
 public class Pay {
 
-    public static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss");
-    
-    @Id
-    @GeneratedValue
-    private Long id;
-    
-    private Long amount;
-    
-    private String txName;
-    
-    private LocalDateTime txDateTime;
+  public static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm:ss");
 
-    public Pay(Long amount, String txName, LocalDateTime txDateTime) {
-        this.amount = amount;
-        this.txName = txName;
-        this.txDateTime = txDateTime;
-    }
+  @Id
+  @GeneratedValue
+  private Long id;
 
-    public Pay(Long id, Long amount, String txName, LocalDateTime txDateTime) {
-        this.id = id;
-        this.amount = amount;
-        this.txName = txName;
-        this.txDateTime = txDateTime;
-    }
+  private Long amount;
+
+  private String txName;
+
+  private LocalDateTime txDateTime;
+
+  public Pay(Long amount, String txName, LocalDateTime txDateTime) {
+    this.amount = amount;
+    this.txName = txName;
+    this.txDateTime = txDateTime;
+  }
+
+  public Pay(Long id, Long amount, String txName, LocalDateTime txDateTime) {
+    this.id = id;
+    this.amount = amount;
+    this.txName = txName;
+    this.txDateTime = txDateTime;
+  }
 }
 ```
 
 ###### JdbcCursorItemReaderJobConfiguration.java
+
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -1828,46 +1830,46 @@ import javax.sql.DataSource;
 @RequiredArgsConstructor
 public class JdbcCursorItemReaderJobConfiguration {
 
-    private final JobBuilderFactory jobBuilderFactory;
-    private final StepBuilderFactory stepBuilderFactory;
-    private final DataSource dataSource;
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final DataSource dataSource;
 
-    public static final int chunkSize = 10;
+  public static final int chunkSize = 10;
 
-    @Bean
-    public Job jdbcCursorItemReaderJob() {
-        return jobBuilderFactory.get("jdbcCursorItemReaderJob")
-                .start(jdbcCursorItemReaderStep())
-                .build();
-    }
+  @Bean
+  public Job jdbcCursorItemReaderJob() {
+    return jobBuilderFactory.get("jdbcCursorItemReaderJob")
+            .start(jdbcCursorItemReaderStep())
+            .build();
+  }
 
-    @Bean
-    public Step jdbcCursorItemReaderStep() {
-        return stepBuilderFactory.get("jdbcCursorItemReaderStep")
-                .<Pay, Pay>chunk(chunkSize)
-                .reader(jdbcCursorItemReader())
-                .writer(jdbcCursorItemWriter())
-                .build();
-    }
-    
-    @Bean
-    public JdbcCursorItemReader<Pay> jdbcCursorItemReader() {
-        return new JdbcCursorItemReaderBuilder<Pay>()
-                .fetchSize(chunkSize)
-                .dataSource(dataSource)
-                .rowMapper(new BeanPropertyRowMapper<>(Pay.class))
-                .sql("SELECT id, amount, tx_name, tx_date_time FROM pay")
-                .name("jdbcCursorItemReader")
-                .build();
-    }
+  @Bean
+  public Step jdbcCursorItemReaderStep() {
+    return stepBuilderFactory.get("jdbcCursorItemReaderStep")
+            .<Pay, Pay>chunk(chunkSize)
+            .reader(jdbcCursorItemReader())
+            .writer(jdbcCursorItemWriter())
+            .build();
+  }
 
-    private ItemWriter<Pay> jdbcCursorItemWriter() {
-        return list -> {
-            for (Pay pay : list) {
-                log.info("Current Pay={}", pay);
-            }
-        };
-    }
+  @Bean
+  public JdbcCursorItemReader<Pay> jdbcCursorItemReader() {
+    return new JdbcCursorItemReaderBuilder<Pay>()
+            .fetchSize(chunkSize)
+            .dataSource(dataSource)
+            .rowMapper(new BeanPropertyRowMapper<>(Pay.class))
+            .sql("SELECT id, amount, tx_name, tx_date_time FROM pay")
+            .name("jdbcCursorItemReader")
+            .build();
+  }
+
+  private ItemWriter<Pay> jdbcCursorItemWriter() {
+    return list -> {
+      for (Pay pay : list) {
+        log.info("Current Pay={}", pay);
+      }
+    };
+  }
 }
 ```
 
@@ -1968,12 +1970,12 @@ Spring Batch에서는 `offset`과 `limit`을 **PagingSize에 맞게 자동으로
 
 #### JdbcPagingItemReader 
 JdbcPagingItemReader는 JdbcCursorItemReader와 같은 JdbcTemplate 인터페이스를 이용한 PagingItemReader입니다.  
-코드는 아래와 같습니다.  
+코드는 아래와 같습니다.
 
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -1999,68 +2001,68 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class JdbcPagingItemReaderJobConfiguration {
 
-    private final JobBuilderFactory jobBuilderFactory;
-    private final StepBuilderFactory stepBuilderFactory;
-    private final DataSource dataSource;
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final DataSource dataSource;
 
-    public static final int chunkSize = 10;
+  public static final int chunkSize = 10;
 
-    @Bean
-    public Job jdbcPagingItemReaderJob() throws Exception {
-        return jobBuilderFactory.get("jdbcPagingItemReaderJob")
-                .start(jdbcPagingItemReaderStep())
-                .build();
-    }
+  @Bean
+  public Job jdbcPagingItemReaderJob() throws Exception {
+    return jobBuilderFactory.get("jdbcPagingItemReaderJob")
+            .start(jdbcPagingItemReaderStep())
+            .build();
+  }
 
-    @Bean
-    public Step jdbcPagingItemReaderStep() throws Exception {
-        return stepBuilderFactory.get("jdbcPagingItemReaderStep")
-                .<Pay, Pay>chunk(chunkSize)
-                .reader(jdbcPagingItemReader())
-                .writer(jdbcPagingItemWriter())
-                .build();
-    }
+  @Bean
+  public Step jdbcPagingItemReaderStep() throws Exception {
+    return stepBuilderFactory.get("jdbcPagingItemReaderStep")
+            .<Pay, Pay>chunk(chunkSize)
+            .reader(jdbcPagingItemReader())
+            .writer(jdbcPagingItemWriter())
+            .build();
+  }
 
-    @Bean
-    public JdbcPagingItemReader<Pay> jdbcPagingItemReader() throws Exception {
-        Map<String, Object> parameterValues = new HashMap<>();
-        parameterValues.put("amount", 2000);
+  @Bean
+  public JdbcPagingItemReader<Pay> jdbcPagingItemReader() throws Exception {
+    Map<String, Object> parameterValues = new HashMap<>();
+    parameterValues.put("amount", 2000);
 
-        return new JdbcPagingItemReaderBuilder<Pay>()
-                .pageSize(chunkSize)
-                .fetchSize(chunkSize)
-                .dataSource(dataSource)
-                .rowMapper(new BeanPropertyRowMapper<>(Pay.class))
-                .queryProvider(createQueryProvider())
-                .parameterValues(parameterValues)
-                .name("jdbcPagingItemReader")
-                .build();
-    }
+    return new JdbcPagingItemReaderBuilder<Pay>()
+            .pageSize(chunkSize)
+            .fetchSize(chunkSize)
+            .dataSource(dataSource)
+            .rowMapper(new BeanPropertyRowMapper<>(Pay.class))
+            .queryProvider(createQueryProvider())
+            .parameterValues(parameterValues)
+            .name("jdbcPagingItemReader")
+            .build();
+  }
 
-    @Bean
-    public PagingQueryProvider createQueryProvider() throws Exception {
-        SqlPagingQueryProviderFactoryBean queryProvider = new SqlPagingQueryProviderFactoryBean();
+  @Bean
+  public PagingQueryProvider createQueryProvider() throws Exception {
+    SqlPagingQueryProviderFactoryBean queryProvider = new SqlPagingQueryProviderFactoryBean();
 
-        queryProvider.setDataSource(dataSource);
-        queryProvider.setSelectClause("id, amount, tx_name, tx_date_time");
-        queryProvider.setFromClause("from pay");
-        queryProvider.setWhereClause("where amount >= :amout");
+    queryProvider.setDataSource(dataSource);
+    queryProvider.setSelectClause("id, amount, tx_name, tx_date_time");
+    queryProvider.setFromClause("from pay");
+    queryProvider.setWhereClause("where amount >= :amout");
 
-        Map<String, Order> sortKeys = new HashMap<>();
-        sortKeys.put("id", Order.ASCENDING);
+    Map<String, Order> sortKeys = new HashMap<>();
+    sortKeys.put("id", Order.ASCENDING);
 
-        queryProvider.setSortKeys(sortKeys);
+    queryProvider.setSortKeys(sortKeys);
 
-        return queryProvider.getObject();
-    }
+    return queryProvider.getObject();
+  }
 
-    private ItemWriter<Pay> jdbcPagingItemWriter() {
-        return list -> {
-            for (Pay pay : list) {
-                log.info("Current Pay={}", pay);
-            }
-        };
-    }
+  private ItemWriter<Pay> jdbcPagingItemWriter() {
+    return list -> {
+      for (Pay pay : list) {
+        log.info("Current Pay={}", pay);
+      }
+    };
+  }
 }
 ```
 
@@ -2131,7 +2133,7 @@ JPA는 Hibernate와 많은 유사점을 가지고 있습니다.
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -2151,45 +2153,45 @@ import javax.persistence.EntityManagerFactory;
 @RequiredArgsConstructor
 public class JpaPagingItemReaderJobConfiguration {
 
-    private final JobBuilderFactory jobBuilderFactory;
-    private final StepBuilderFactory stepBuilderFactory;
-    private final EntityManagerFactory entityManagerFactory;
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final EntityManagerFactory entityManagerFactory;
 
-    public static final int chunkSize = 10;
+  public static final int chunkSize = 10;
 
-    @Bean
-    public Job jpaPagingItemReaderJob() {
-        return jobBuilderFactory.get("jpaPagingItemReaderJob")
-                .start(jpaPagingItemReaderStep())
-                .build();
-    }
+  @Bean
+  public Job jpaPagingItemReaderJob() {
+    return jobBuilderFactory.get("jpaPagingItemReaderJob")
+            .start(jpaPagingItemReaderStep())
+            .build();
+  }
 
-    @Bean
-    public Step jpaPagingItemReaderStep() {
-        return stepBuilderFactory.get("jpaPagingItemReaderStep")
-                .<Pay, Pay>chunk(chunkSize)
-                .reader(jpaPagingItemReader())
-                .writer(jpaPagingItemWriter())
-                .build();
-    }
+  @Bean
+  public Step jpaPagingItemReaderStep() {
+    return stepBuilderFactory.get("jpaPagingItemReaderStep")
+            .<Pay, Pay>chunk(chunkSize)
+            .reader(jpaPagingItemReader())
+            .writer(jpaPagingItemWriter())
+            .build();
+  }
 
-    @Bean
-    public JpaPagingItemReader<Pay> jpaPagingItemReader() {
-        return new JpaPagingItemReaderBuilder<Pay>()
-                .name("jpaPagingItemReader")
-                .entityManagerFactory(entityManagerFactory)
-                .pageSize(chunkSize)
-                .queryString("SELECT p FROM Pay p WHERE amount >= 2000")
-                .build();
-    }
+  @Bean
+  public JpaPagingItemReader<Pay> jpaPagingItemReader() {
+    return new JpaPagingItemReaderBuilder<Pay>()
+            .name("jpaPagingItemReader")
+            .entityManagerFactory(entityManagerFactory)
+            .pageSize(chunkSize)
+            .queryString("SELECT p FROM Pay p WHERE amount >= 2000")
+            .build();
+  }
 
-    private ItemWriter<Pay> jpaPagingItemWriter() {
-        return list -> {
-            for (Pay pay : list) {
-                log.info("Current pay={}", pay);
-            }
-        };
-    }
+  private ItemWriter<Pay> jpaPagingItemWriter() {
+    return list -> {
+      for (Pay pay : list) {
+        log.info("Current pay={}", pay);
+      }
+    };
+  }
 }
 ```
 
@@ -2282,11 +2284,12 @@ ORM을 사용하지 않는 경우 Writer는 대부분 JdbcBatchItemWriter를 사
 실제로 JdbcBatchItemWriter의 `write()`를 확인해보시면 일괄처리하는 것을 확인할 수 있습니다. 
 ![](images/JdbcBatchItemWriter코드01.png)
 
-그럼 `JdbcBatchItemWriter`로 간단한 배치를 하나 작성해 보겠습니다.  
+그럼 `JdbcBatchItemWriter`로 간단한 배치를 하나 작성해 보겠습니다.
+
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -2309,50 +2312,50 @@ import javax.sql.DataSource;
 @RequiredArgsConstructor
 public class JdbcBatchItemWriterJobConfiguration {
 
-    private final JobBuilderFactory jobBuilderFactory;
-    private final StepBuilderFactory stepBuilderFactory;
-    private final DataSource dataSource;
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final DataSource dataSource;
 
-    public static final int chunkSize = 10;
+  public static final int chunkSize = 10;
 
-    @Bean
-    public Job jdbcBatchItemWriterJob() {
-        return jobBuilderFactory.get("jdbcBatchItemWriterJob")
-                .start(jdbcBatchItemWriterStep())
-                .build();
-    }
-  
-    @Bean
-    public Step jdbcBatchItemWriterStep() {
-        return stepBuilderFactory.get("jdbcBatchItemWriterStep")
-                .<Pay, Pay>chunk(chunkSize)
-                .reader(jdbcBatchItemWriterReader())
-                .writer(jdbcBatchItemWriter())
-                .build();
-    }
+  @Bean
+  public Job jdbcBatchItemWriterJob() {
+    return jobBuilderFactory.get("jdbcBatchItemWriterJob")
+            .start(jdbcBatchItemWriterStep())
+            .build();
+  }
 
-    @Bean
-    public JdbcCursorItemReader<Pay> jdbcBatchItemWriterReader() {
-        return new JdbcCursorItemReaderBuilder<Pay>()
-                .fetchSize(chunkSize)
-                .dataSource(dataSource)
-                .rowMapper(new BeanPropertyRowMapper<>(Pay.class))
-                .sql("SELECT id, amount, tx_name, tx_date_time FROM pay")
-                .name("jdbcBatchItemWriter")
-                .build();
-    }
+  @Bean
+  public Step jdbcBatchItemWriterStep() {
+    return stepBuilderFactory.get("jdbcBatchItemWriterStep")
+            .<Pay, Pay>chunk(chunkSize)
+            .reader(jdbcBatchItemWriterReader())
+            .writer(jdbcBatchItemWriter())
+            .build();
+  }
 
-    /**
-     * reader에서 넘어온 데이터를 하나씩 출력하는 writer
-     */
-    @Bean // beanMapper()을 사용할 경우 필수
-    public JdbcBatchItemWriter<Pay> jdbcBatchItemWriter() {
-        return new JdbcBatchItemWriterBuilder<Pay>()
-                .dataSource(dataSource)
-                .sql("INSERT INTO pay2(amount, tx_name, tx_date_time) values (:amount, :txName, :txDateTime)")
-                .beanMapped()
-                .build();
-    }
+  @Bean
+  public JdbcCursorItemReader<Pay> jdbcBatchItemWriterReader() {
+    return new JdbcCursorItemReaderBuilder<Pay>()
+            .fetchSize(chunkSize)
+            .dataSource(dataSource)
+            .rowMapper(new BeanPropertyRowMapper<>(Pay.class))
+            .sql("SELECT id, amount, tx_name, tx_date_time FROM pay")
+            .name("jdbcBatchItemWriter")
+            .build();
+  }
+
+  /**
+   * reader에서 넘어온 데이터를 하나씩 출력하는 writer
+   */
+  @Bean // beanMapper()을 사용할 경우 필수
+  public JdbcBatchItemWriter<Pay> jdbcBatchItemWriter() {
+    return new JdbcBatchItemWriterBuilder<Pay>()
+            .dataSource(dataSource)
+            .sql("INSERT INTO pay2(amount, tx_name, tx_date_time) values (:amount, :txName, :txDateTime)")
+            .beanMapped()
+            .build();
+  }
 }
 ```
 
@@ -2401,12 +2404,13 @@ writer를 생성하시고 위 메소드를 그 아래에서 바로 실행해보�
 두 번째로 알아볼 Writer는 ORM을 사용할 수 있는 `JpaItemWriter`입니다.  
 Writer에 전달하는 데이터가 Entity 클래스라면 JpaItemWriter를 사용하시면 됩니다.  
 
-바로 샘플 코드로 가보겠습니다.  
+바로 샘플 코드로 가보겠습니다.
+
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
-import com.hansoleee.basicspringbatch.domain.Pay2;
+import com.hansoleee.basicspringbatch.entity.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay2;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -2429,49 +2433,49 @@ import javax.persistence.EntityManagerFactory;
 @RequiredArgsConstructor
 public class JpaItemWriterJobConfiguration {
 
-    private final JobBuilderFactory jobBuilderFactory;
-    private final StepBuilderFactory stepBuilderFactory;
-    private final EntityManagerFactory entityManagerFactory;
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final EntityManagerFactory entityManagerFactory;
 
-    public static final int chunkSize = 10;
+  public static final int chunkSize = 10;
 
-    @Bean
-    public Job jpaItemWriterJob() {
-        return jobBuilderFactory.get("jpaItemWriterJob")
-                .start(jpaItemWriterStep())
-                .build();
-    }
+  @Bean
+  public Job jpaItemWriterJob() {
+    return jobBuilderFactory.get("jpaItemWriterJob")
+            .start(jpaItemWriterStep())
+            .build();
+  }
 
-    @Bean
-    public Step jpaItemWriterStep() {
-        return stepBuilderFactory.get("jpaItemWriterStep")
-                .<Pay, Pay2>chunk(chunkSize)
-                .reader(jpaItemWriterReader())
-                .processor(jpaItemProcessor())
-                .writer(jpaItemWriter())
-                .build();
-    }
+  @Bean
+  public Step jpaItemWriterStep() {
+    return stepBuilderFactory.get("jpaItemWriterStep")
+            .<Pay, Pay2>chunk(chunkSize)
+            .reader(jpaItemWriterReader())
+            .processor(jpaItemProcessor())
+            .writer(jpaItemWriter())
+            .build();
+  }
 
-    @Bean
-    public JpaPagingItemReader<Pay> jpaItemWriterReader() {
-        return new JpaPagingItemReaderBuilder<Pay>()
-                .pageSize(chunkSize)
-                .queryString("SELECT p FROM Pay p")
-                .name("jpaItemWriterReader")
-                .build();
-    }
+  @Bean
+  public JpaPagingItemReader<Pay> jpaItemWriterReader() {
+    return new JpaPagingItemReaderBuilder<Pay>()
+            .pageSize(chunkSize)
+            .queryString("SELECT p FROM Pay p")
+            .name("jpaItemWriterReader")
+            .build();
+  }
 
-    @Bean
-    public ItemProcessor<Pay, Pay2> jpaItemProcessor() {
-        return pay -> new Pay2(pay.getAmount(), pay.getTxName(), pay.getTxDateTime());
-    }
+  @Bean
+  public ItemProcessor<Pay, Pay2> jpaItemProcessor() {
+    return pay -> new Pay2(pay.getAmount(), pay.getTxName(), pay.getTxDateTime());
+  }
 
-    @Bean
-    public JpaItemWriter<Pay2> jpaItemWriter() {
-        JpaItemWriter<Pay2> jpaItemWriter = new JpaItemWriter<>();
-        jpaItemWriter.setEntityManagerFactory(entityManagerFactory);
-        return jpaItemWriter;
-    }
+  @Bean
+  public JpaItemWriter<Pay2> jpaItemWriter() {
+    JpaItemWriter<Pay2> jpaItemWriter = new JpaItemWriter<>();
+    jpaItemWriter.setEntityManagerFactory(entityManagerFactory);
+    return jpaItemWriter;
+  }
 }
 ```
 
@@ -2525,11 +2529,12 @@ Custom Writer 구현의 예는 다음과 같은 경우가 있습니다.
 이렇게 Spring Batch에서 공식적으로 지원하지 않는 Writer를 사용하고 싶을 때 **ItemWriter 인터페이스를 구현**하시면 됩니다.  
 
 아래는 processor에서 넘어온 데이터를 `System.out.println`으로 출력하는 Writer를 만든 경우입니다.
+
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Pay;
-import com.hansoleee.basicspringbatch.domain.Pay2;
+import com.hansoleee.basicspringbatch.entity.Pay;
+import com.hansoleee.basicspringbatch.entity.Pay2;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -2552,51 +2557,51 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CustomItemWriterJobConfiguration {
 
-    private final JobBuilderFactory jobBuilderFactory;
-    private final StepBuilderFactory stepBuilderFactory;
-    private final EntityManagerFactory entityManagerFactory;
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final EntityManagerFactory entityManagerFactory;
 
-    public static final int chunkSize = 10;
+  public static final int chunkSize = 10;
 
-    @Bean
-    public Job customItemWriterJob() {
-        return jobBuilderFactory.get("customItemWriterJob")
-                .start(customItemWriterStep())
-                .build();
-    }
+  @Bean
+  public Job customItemWriterJob() {
+    return jobBuilderFactory.get("customItemWriterJob")
+            .start(customItemWriterStep())
+            .build();
+  }
 
-    @Bean
-    public Step customItemWriterStep() {
-        return stepBuilderFactory.get("customItemWriterStep")
-                .<Pay, Pay2>chunk(chunkSize)
-                .reader(customItemWriterReader())
-                .processor(customItemWriterProcessor())
-                .writer(customItemWriter())
-                .build();
-    }
-    
-    @Bean
-    public JpaPagingItemReader<Pay> customItemWriterReader() {
-        return new JpaPagingItemReaderBuilder<Pay>()
-                .name("customItemWriterReader")
-                .entityManagerFactory(entityManagerFactory)
-                .queryString("SELECT p FROM Pay p")
-                .build();
-    }
-    
-    @Bean
-    public ItemProcessor<Pay, Pay2> customItemWriterProcessor() {
-        return pay -> new Pay2(pay.getAmount(), pay.getTxName(), pay.getTxDateTime());
-    }
-    
-    @Bean
-    public ItemWriter<Pay2> customItemWriter() {
-        return items -> {
-            for (Pay2 item : items) {
-                System.out.println(item);
-            }
-        };
-    }
+  @Bean
+  public Step customItemWriterStep() {
+    return stepBuilderFactory.get("customItemWriterStep")
+            .<Pay, Pay2>chunk(chunkSize)
+            .reader(customItemWriterReader())
+            .processor(customItemWriterProcessor())
+            .writer(customItemWriter())
+            .build();
+  }
+
+  @Bean
+  public JpaPagingItemReader<Pay> customItemWriterReader() {
+    return new JpaPagingItemReaderBuilder<Pay>()
+            .name("customItemWriterReader")
+            .entityManagerFactory(entityManagerFactory)
+            .queryString("SELECT p FROM Pay p")
+            .build();
+  }
+
+  @Bean
+  public ItemProcessor<Pay, Pay2> customItemWriterProcessor() {
+    return pay -> new Pay2(pay.getAmount(), pay.getTxName(), pay.getTxDateTime());
+  }
+
+  @Bean
+  public ItemWriter<Pay2> customItemWriter() {
+    return items -> {
+      for (Pay2 item : items) {
+        System.out.println(item);
+      }
+    };
+  }
 }
 ```
 
@@ -2689,7 +2694,7 @@ public ItemProcessor<ReadType, WriteType> processor() {
 ```java
 package com.hansoleee.basicspringbatch.job;
 
-import com.hansoleee.basicspringbatch.domain.Teacher;
+import com.hansoleee.basicspringbatch.entity.Teacher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
@@ -2783,3 +2788,231 @@ public ItemProcessor<Teacher, String> processor() {
 아래와 같이 Writer에서 실행하는 `log.info("Teacher Name={}", item)`가 아주 잘 수행되었음을 확인할 수 있습니다.  
 
 ![](images/ProcessorConvertJobConfiguration실행결과01.png)
+
+### 필터
+다음으로 알아볼 예제는 **필터**입니다.  
+즉, **Writer에 값을 넘길지 말지를 Processor에서 판단하는 것**을 얘기합니다.  
+아래의 코드는 `Teacher`의 id가 짝수일 경우 필터링 하는 예제입니다.
+
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.entity.Teacher;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.JobScope;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.persistence.EntityManagerFactory;
+
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+public class ProcessorNullJobConfiguration {
+
+  public static final String JOB_NAME = "processorNullBatch";
+  public static final String BEAN_PREFIX = JOB_NAME + "_";
+
+  private final JobBuilderFactory jobBuilderFactory;
+  private final StepBuilderFactory stepBuilderFactory;
+  private final EntityManagerFactory emf;
+
+  @Value("${chunkSize: 1000}")
+  private int chunkSize;
+
+  @Bean(JOB_NAME)
+  public Job job() {
+    return jobBuilderFactory.get(JOB_NAME)
+            .preventRestart()
+            .start(step())
+            .build();
+  }
+
+  @Bean(BEAN_PREFIX + "step")
+  @JobScope
+  public Step step() {
+    return stepBuilderFactory.get(BEAN_PREFIX + "step")
+            .<Teacher, Teacher>chunk(chunkSize)
+            .reader(reader())
+            .processor(processor())
+            .writer(writer())
+            .build();
+  }
+
+  @Bean
+  public JpaPagingItemReader<Teacher> reader() {
+    return new JpaPagingItemReaderBuilder<Teacher>()
+            .name(BEAN_PREFIX + "reader")
+            .entityManagerFactory(emf)
+            .pageSize(chunkSize)
+            .queryString("SELECT t FROM Teacher t")
+            .build();
+  }
+
+  @Bean
+  public ItemProcessor<Teacher, Teacher> processor() {
+    return teacher -> {
+      boolean isIgnoreTarget = teacher.getId() % 2 == 0;
+      if (isIgnoreTarget) {
+        log.info(">>>>>>>>>> Teacher name={}, isIgnoreTarget={}", teacher.getName(), isIgnoreTarget);
+        return null;
+      }
+      return teacher;
+    };
+  }
+
+  private ItemWriter<Teacher> writer() {
+    return items -> {
+      for (Teacher item : items) {
+        log.info(">>>>> Teacher name={}", item.getName());
+      }
+    };
+  }
+}
+```
+
+ItemProcessor에서는 id가 짝수일 경우 `return null;`을 함으로써 Writer에 넘기지 않도록 합니다.  
+
+```java
+@Bean
+public ItemProcessor<Teacher, Teacher> processor() {
+    return teacher -> {
+        boolean isIgnoreTarget = teacher.getId() % 2 == 0;
+        if (isIgnoreTarget) {
+            log.info(">>>>>>>>>> Teacher name={}, isIgnoreTarget={}", teacher.getName(), isIgnoreTarget);
+            return null;
+        }
+        return teacher;
+    };
+}
+```
+
+실제 코드를 돌려보면 **홀수인 Teacher만 출력**되는 것을 확인할 수 있습니다.  
+
+![](images/ProcessorNullJob실행결과01.png)
+
+이와 같은 방식으로 Writer에 넘길 데이터들을 제어할 수 있겠죠?
+
+### 트랜잭션 범위
+Spring Batch에서 **트랜잭션 범위는 Chunk 단위**입니다.  
+그래서 Reader에서 Entity를 반환해 주었다면 **Entity 사이의 Lazy Loading이 가능**합니다.  
+이는 Processor뿐만 아니라 Writer에서도 가능합니다.  
+
+실제로 Lazy Loading이 수행되는지 테스트해보겠습니다.  
+
+#### Processor
+첫 번째 예제는 **Processor에서의 Lazy Loading**입니다.  
+
+아래 코드는 Reader에서 `Teacher` Entity를 반환해, Processor에서 Entity의 하위 자식들인 `Student`를 Lazy Loading합니다.  
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.entity.Teacher;
+import lombok.*;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.JobScope;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.persistence.EntityManagerFactory;
+
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+public class TxProcessorJobConfiguration {
+
+    public static final String JOB_NAME = "txProcessorJob";
+    public static final String BEAN_PREFIX = JOB_NAME + "_";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final EntityManagerFactory emf;
+
+    @Value("${chunkSize:1000}")
+    private int chunkSize;
+
+    @Bean(JOB_NAME)
+    public Job job() {
+        return jobBuilderFactory.get(JOB_NAME)
+                .start(step())
+                .build();
+    }
+
+    @Bean(BEAN_PREFIX + "step")
+    @JobScope
+    public Step step() {
+        return stepBuilderFactory.get(BEAN_PREFIX + "step")
+                .<Teacher, ClassInformation>chunk(chunkSize)
+                .reader(reader())
+                .processor(processor())
+                .writer(writer())
+                .build();
+    }
+
+    @Bean(BEAN_PREFIX + "reader")
+    public JpaPagingItemReader<Teacher> reader() {
+        return new JpaPagingItemReaderBuilder<Teacher>()
+                .name(BEAN_PREFIX + "reader")
+                .entityManagerFactory(emf)
+                .pageSize(chunkSize)
+                .queryString("SELECT t FROM Teacher t")
+                .build();
+    }
+
+    public ItemProcessor<Teacher, ClassInformation> processor() {
+        return teacher -> new ClassInformation(teacher.getName(), teacher.getStudentList().size());
+    }
+
+    public ItemWriter<ClassInformation> writer() {
+        return items -> {
+            for (ClassInformation classInformation : items) {
+                log.info(">>>>> 반 정보={}", classInformation);
+            }
+        };
+    }
+
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Getter
+    @Setter
+    @ToString
+    static class ClassInformation {
+        private String teacherName;
+        private long theNumberOfStudents;
+    }
+}
+```
+
+보시는 것처럼 Processor 부분에서는 `teacher.getStudents()`로 가져옵니다.  
+```java
+public ItemProcessor<Teacher, ClassInformation> processor() {
+    return teacher -> new ClassInformation(teacher.getName(), teacher.getStudentList().size());
+}
+```
+
+여기서 Processor가 트랜잭션 범위 밖이라면 오류가 날 것입니다.  
+아래의 실행 결과를 확인해 주세요.
+
+![](images/TxProcessorJob실행결과01.png)
+
+성공적으로 배치가 실행되었음을 확인할 수 있습니다.  
+즉, **Processor는 트랜잭션 범위 안이며, Entity의 Lazy Loading이 가능**하다는 것을 확인하였습니다.  

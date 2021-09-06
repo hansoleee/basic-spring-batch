@@ -19,18 +19,18 @@ import org.springframework.context.annotation.Configuration;
 import javax.persistence.EntityManagerFactory;
 
 @Slf4j
-@RequiredArgsConstructor
 @Configuration
-public class ProcessorConvertJobConfiguration {
+@RequiredArgsConstructor
+public class ProcessorNullJobConfiguration {
 
-    public static final String JOB_NAME = "ProcessorConvertBatch";
+    public static final String JOB_NAME = "processorNullBatch";
     public static final String BEAN_PREFIX = JOB_NAME + "_";
 
     private final JobBuilderFactory jobBuilderFactory;
     private final StepBuilderFactory stepBuilderFactory;
     private final EntityManagerFactory emf;
 
-    @Value("${chunkSize:1000}")
+    @Value("${chunkSize: 1000}")
     private int chunkSize;
 
     @Bean(JOB_NAME)
@@ -45,15 +45,15 @@ public class ProcessorConvertJobConfiguration {
     @JobScope
     public Step step() {
         return stepBuilderFactory.get(BEAN_PREFIX + "step")
-                .<Teacher, String>chunk(chunkSize)
-                .reader(reader())
-                .processor(processor())
-                .writer(writer())
+                .<Teacher, Teacher>chunk(chunkSize)
+                .reader(processorNullBatchReader())
+                .processor(processorNullProcessor())
+                .writer(processorNullWriter())
                 .build();
     }
 
     @Bean
-    public JpaPagingItemReader<Teacher> reader() {
+    public JpaPagingItemReader<Teacher> processorNullBatchReader() {
         return new JpaPagingItemReaderBuilder<Teacher>()
                 .name(BEAN_PREFIX + "reader")
                 .entityManagerFactory(emf)
@@ -63,14 +63,21 @@ public class ProcessorConvertJobConfiguration {
     }
 
     @Bean
-    public ItemProcessor<Teacher, String> processor() {
-        return Teacher::getName;
+    public ItemProcessor<Teacher, Teacher> processorNullProcessor() {
+        return teacher -> {
+            boolean isIgnoreTarget = teacher.getId() % 2 == 0;
+            if (isIgnoreTarget) {
+                log.info(">>>>>>>>>> Teacher name={}, isIgnoreTarget={}", teacher.getName(), isIgnoreTarget);
+                return null;
+            }
+            return teacher;
+        };
     }
 
-    private ItemWriter<String> writer() {
+    private ItemWriter<Teacher> processorNullWriter() {
         return items -> {
-            for (String item : items) {
-                log.info("Teacher Name={}", item);
+            for (Teacher item : items) {
+                log.info(">>>>> Teacher name={}", item.getName());
             }
         };
     }
