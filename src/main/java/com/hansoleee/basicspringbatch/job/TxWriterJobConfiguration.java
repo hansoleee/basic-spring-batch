@@ -2,14 +2,12 @@ package com.hansoleee.basicspringbatch.job;
 
 import com.hansoleee.basicspringbatch.entity.ClassInformation;
 import com.hansoleee.basicspringbatch.entity.Teacher;
-import lombok.*;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.JobScope;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
-import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.JpaPagingItemReader;
 import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
@@ -22,10 +20,10 @@ import javax.persistence.EntityManagerFactory;
 @Slf4j
 @Configuration
 @RequiredArgsConstructor
-public class TxProcessorJobConfiguration {
+public class TxWriterJobConfiguration {
 
-    public static final String JOB_NAME = "txProcessorJob";
-    public static final String BEAN_PREFIX = JOB_NAME + "_";
+    public static final String JOB_NAME = "txWriterJob";
+    public static final String PREFIX_BEAN = JOB_NAME + "_";
 
     private final JobBuilderFactory jobBuilderFactory;
     private final StepBuilderFactory stepBuilderFactory;
@@ -37,39 +35,36 @@ public class TxProcessorJobConfiguration {
     @Bean(JOB_NAME)
     public Job job() {
         return jobBuilderFactory.get(JOB_NAME)
+                .preventRestart()
                 .start(step())
                 .build();
     }
 
-    @Bean(BEAN_PREFIX + "step")
-    @JobScope
+    @Bean(PREFIX_BEAN + "step")
     public Step step() {
-        return stepBuilderFactory.get(BEAN_PREFIX + "step")
-                .<Teacher, ClassInformation>chunk(chunkSize)
+        return stepBuilderFactory.get(PREFIX_BEAN + "step")
+                .<Teacher, Teacher>chunk(chunkSize)
                 .reader(reader())
-                .processor(processor())
                 .writer(writer())
                 .build();
     }
 
-    @Bean(BEAN_PREFIX + "reader")
+    @Bean(PREFIX_BEAN + "reader")
     public JpaPagingItemReader<Teacher> reader() {
         return new JpaPagingItemReaderBuilder<Teacher>()
-                .name(BEAN_PREFIX + "reader")
+                .name(PREFIX_BEAN + "reader")
                 .entityManagerFactory(emf)
                 .pageSize(chunkSize)
                 .queryString("SELECT t FROM Teacher t")
                 .build();
     }
 
-    public ItemProcessor<Teacher, ClassInformation> processor() {
-        return teacher -> new ClassInformation(teacher.getName(), teacher.getStudentList().size());
-    }
-
-    public ItemWriter<ClassInformation> writer() {
+    public ItemWriter<Teacher> writer() {
         return items -> {
-            for (ClassInformation classInformation : items) {
-                log.info(">>>>> 반 정보={}", classInformation);
+            log.info(">>>>> This is in writer()");
+            for (Teacher item : items) {
+                ClassInformation classInformation = new ClassInformation(item.getName(), item.getStudentList().size());
+                log.info("반 정보={}", classInformation);
             }
         };
     }

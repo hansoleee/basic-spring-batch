@@ -3016,3 +3016,101 @@ public ItemProcessor<Teacher, ClassInformation> processor() {
 
 성공적으로 배치가 실행되었음을 확인할 수 있습니다.  
 즉, **Processor는 트랜잭션 범위 안이며, Entity의 Lazy Loading이 가능**하다는 것을 확인하였습니다.  
+
+### Writer
+두 번째 예제는 **Writer에서의 Lazy Loading**입니다.  
+
+아래 코드는 
+- Reader에서 `Teacher` Entity를 반환하고,
+- Processor를 거치지 않고 Writer로 바로 넘긴 후 
+- Writer에서 Entity의 하위 자식들인 `Student`를 Lazy Loading 합니다.  
+
+###### TxProcessorJobConfiguration.java
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.entity.ClassInformation;
+import com.hansoleee.basicspringbatch.entity.Teacher;
+import lombok.*;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.JobScope;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.JpaPagingItemReader;
+import org.springframework.batch.item.database.builder.JpaPagingItemReaderBuilder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.persistence.EntityManagerFactory;
+
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+public class TxProcessorJobConfiguration {
+
+    public static final String JOB_NAME = "txProcessorJob";
+    public static final String BEAN_PREFIX = JOB_NAME + "_";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final EntityManagerFactory emf;
+
+    @Value("${chunkSize:1000}")
+    private int chunkSize;
+
+    @Bean(JOB_NAME)
+    public Job job() {
+        return jobBuilderFactory.get(JOB_NAME)
+                .start(step())
+                .build();
+    }
+
+    @Bean(BEAN_PREFIX + "step")
+    @JobScope
+    public Step step() {
+        return stepBuilderFactory.get(BEAN_PREFIX + "step")
+                .<Teacher, ClassInformation>chunk(chunkSize)
+                .reader(reader())
+                .processor(processor())
+                .writer(writer())
+                .build();
+    }
+
+    @Bean(BEAN_PREFIX + "reader")
+    public JpaPagingItemReader<Teacher> reader() {
+        return new JpaPagingItemReaderBuilder<Teacher>()
+                .name(BEAN_PREFIX + "reader")
+                .entityManagerFactory(emf)
+                .pageSize(chunkSize)
+                .queryString("SELECT t FROM Teacher t")
+                .build();
+    }
+
+    public ItemProcessor<Teacher, ClassInformation> processor() {
+        return teacher -> new ClassInformation(teacher.getName(), teacher.getStudentList().size());
+    }
+
+    public ItemWriter<ClassInformation> writer() {
+        return items -> {
+            for (ClassInformation classInformation : items) {
+                log.info(">>>>> 반 정보={}", classInformation);
+            }
+        };
+    }
+}
+```
+
+코드를 실행한 결과는 아래와 같습니다.  
+
+![](images/TxWriterJob실행결과01.png)
+
+Writer()에서 Lazy Loading이 발생하는 것을 확인할 수 있습니다.  
+
+위 2개의 테스트로 Processor와 Writer는 트랜잭션 범위 안이며, Lazy Loading이 가능하다는 것을 확인하였습니다.  
+이제는 JPA를 쓸 때 더 편하게 사용할 수 있을 것입니다.  
+
