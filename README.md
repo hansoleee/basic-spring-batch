@@ -3259,3 +3259,181 @@ CompositeItemProcessor에 ItemProcessor List인 `delegates`을 할당만 하면 
 
 아주 잘 수행되었음을 확인할 수 있습니다.  
 
+## Spring Batch 테스트 코드  
+일반적으로 Web Application의 경우 전문 테스터 분들 또는 QA분들께서 전체 기능 검증을 해주는 반면,  
+Batch Application의 경우 DB의 최종 상태라던가 메세징 큐의 발행 내역 등 **개발자들이 직접 확인해주는 것** 외에는 검증하기가 쉽지 않습니다.  
+(별도의 Admin을 제공하는 것을 포함합니다. ~~Admin? Web Application과 같이 기능 검증을 담당해 주시는 분을 의미하는 것인가?~~)
+
+더군다나 개발자가 로컬 환경에서 Batch Application을 수행하는 것도 많은 수작업이 필요합니다.  
+수정/삭제 등의 Batch Application이라면 **한 번 수행할 때마다 로컬 DB의 데이터를 원복**하고 다시 수행하는 작업을 반복해야 합니다.  
+
+이러다보니 당연하게 테스트 코드의 필요성이 많이 강조됩니다.  
+
+다행이라면 Batch Application은 Web Application보다 테스트 코드 작성이 수월하고, 한 번 작성하게 되면 그 효과가 좋습니다.  
+
+아무래도 UI 검증이 필요한 Web Application에 비해 **JAVA 코드에 대한 검증만** 필요한 Batch Application의 테스트 코드를 수월하게 작성할 수 있습니다.  
+
+이번에는 Spring Batch 환경에서의 테스트 코드에 관해 알아보겠습니다.  
+
+JUnit & Mockito 프레임워크와 H2를 이용한 테스트 환경 등에 대해서는 별도로 설명하지 않습니다.  
+
+해당 프레임워크에 대한 기본적인 사용법은 이미 충분히 많은 자료들이 있으니 참고해서 봐주시면 됩니다.   
+
+### 통합 테스트
+
+스프링 배치 모듈들 사이에서 ItemReader만 뽑아내 **쿼리를 테스트 해볼 수 있는 환경**을 Setup하려면 여러가지 장치가 필요합니다.
+
+배치의 테스트 코드를 작성할 때 **Reader / Processor의 단위 테스트 코드를 먼저 작성**후 통합 테스트 코드를 작성하도록 합니다.
+
+그치만 배치의 경우 단위 테스트보단 통합 테스트 작성이 비교적 쉽기에 통합 테스트를 작성하는 방법부터 알아보겠습니다.   
+
+1. `@ContextConfiguration(classes = {...})`
+   - 통합 테스트 실행시 사용할 java 설정들을 선택합니다.  
+   - `ScopeJobConfiguration`: 테스트할 Batch job
+   - `TestBatchConfig`: 배치 테스트 환경
+
+2. `JobLauncherTestUtils`
+   - Batch Job을 테스트 환경에서 실행할 Utils 클래스입니다.  
+   - CLI 등으로 실행하는 Job을 **테스트 코드에서 Job을 실행**할 수 있도록 지원합니다.  
+
+3. `jobLauncherTestUtils.launchJob(jobParameters)`
+   - **JobParameter와 함께 Job을 실행**합니다.  
+     - 운영 환경에서는 CLI로 배치를 수행하겠지만, 테스트 코드에서는 `JobLauncherTestUtils`를 통해 Job을 수행하고 결과를 검증합니다.  
+   - 해당 Job의 결과는 `JobExecution`에 담겨있습니다.
+   - 성공적으로 Batch가 수행되었는지는 `jobExecution.getStatus()`로 검증합니다.  
+   
+
+###### ScopeJobConfiguration.java (/src/main/java/com/hansoleee/basicspringbatch/job/ScopeJobConfiguration.java)
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.JobScope;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.step.tasklet.Tasklet;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Slf4j
+@Configuration
+@RequiredArgsConstructor
+public class ScopeJobConfiguration {
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+
+    @Bean
+    public Job scopeJob() {
+        return jobBuilderFactory.get("scopeJob")
+                .start(scopeStep01(null))
+                .next(scopeStep02())
+                .build();
+    }
+
+    @Bean
+    @JobScope
+    public Step scopeStep01(@Value("#{jobParameters[requestDate]}") String requestDate) {
+        return stepBuilderFactory.get("scopeStep01")
+                .tasklet((contribution, chunkContext) -> {
+                    log.info(">>>>> This is scopeStep01");
+                    log.info(">>>>> requestDate = {}", requestDate);
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+
+    @Bean
+    public Step scopeStep02() {
+        return stepBuilderFactory.get("scopeStep02")
+                .tasklet(scopeStep02Tasklet(null))
+                .build();
+    }
+
+    @Bean
+    @StepScope
+    public Tasklet scopeStep02Tasklet(@Value("#{jobParameters[requestDate]}") String requestDate) {
+        return (contribution, chunkContext) -> {
+            log.info(">>>>> This is scopeStep02");
+            log.info(">>>>> requestDate = {}", requestDate);
+            return RepeatStatus.FINISHED;
+        };
+    }
+}
+```
+
+###### ScopeJobConfigurationTest.java (/src/test/java/com/hansoleee/basicspringbatch/job/ScopeJobConfigurationTest.java)
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.TestBatchConfig;
+import org.assertj.core.api.Assertions;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.batch.core.BatchStatus;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.test.JobLauncherTestUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringRunner;
+
+import java.time.LocalDate;
+
+@RunWith(SpringRunner.class)
+@ContextConfiguration(classes = {ScopeJobConfiguration.class, TestBatchConfig.class})
+public class ScopeJobConfigurationTest {
+
+    @Autowired
+    public JobLauncherTestUtils jobLauncherTestUtils;
+
+    @Test
+    public void jobParameter정상출력() throws Exception {
+        //given
+        LocalDate requestDate = LocalDate.of(2021, 8, 28);
+
+        JobParameters jobParameters = new JobParametersBuilder()
+                .addString("requestDate", requestDate.toString())
+                .toJobParameters();
+
+        //when
+        JobExecution jobExecution = jobLauncherTestUtils.launchJob(jobParameters);
+
+        //then
+        Assertions.assertThat(jobExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+    }
+}
+```
+JobLauncherTestUtils를 `@Autowired` 하기 위해서 아래의 클래스를 작성해 주세요.
+###### TestBatchConfig.java (/src/test/java/com/hansoleee/basicspringbatch/TestBatchConfig.java)
+```java
+package com.hansoleee.basicspringbatch;
+
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.test.JobLauncherTestUtils;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+@EnableAutoConfiguration
+@EnableBatchProcessing
+public class TestBatchConfig {
+
+    @Bean
+    public JobLauncherTestUtils jobLauncherTestUtils() {
+        return new JobLauncherTestUtils();
+    }
+}
+```
+
+실행한 결과는 아래와 같습니다.
+
+![](images/ScopeJobConfigurationTest실행결과01.png)
