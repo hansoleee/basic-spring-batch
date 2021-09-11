@@ -381,3 +381,374 @@ public static class TestDataSourceConfiguration {
 테스트 코드를 수행해 보겠습니다.
 ![](images/BatchNoSpringContextUnitTest2실행코드01.png)
 
+### StepScope가 필요한 단위 테스트
+StepScope와 같이 **스프링 배치만의 Scope가 있어야만** 작동하는 스프링 배치가 뭐가 있을까요?
+대표적으로 JobParameter가 있습니다.  
+
+JobParameter는 JobScope 또는 StepScope가 있는 환경에서만 사용할 수 있다보니 앞에서 소개드린 것과 같이 **단순한 방식으로는 테스트할 수가 없습니다.**
+
+그래서 이와 같이 **StepScope 환경에서의 단위 테스트**를 할 수 있는 방법을 알아보겠습니다.  
+(JobScope 환경에서의 테스트 코드는 통합 테스트를 사용하지면 됩니다.)
+
+이 역시 `@SpringBatchTest`가 등장하기 전/후로 분리해서 알아보겠습니다.  
+
+테스트할 대상 코드는 **StepScope가 필요없는 단위 테스트**에서 변경을 하였습니다.  
+**Job Bean이 없으면 테스트가 불가능**하기 때문입니다.
+
+###### BatchJdbcUnitTestConfiguration.java
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.entity.SalesSum;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepScope;
+import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.item.database.JdbcBatchItemWriter;
+import org.springframework.batch.item.database.JdbcPagingItemReader;
+import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
+import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
+import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
+
+import javax.sql.DataSource;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+
+@Slf4j
+@RequiredArgsConstructor
+@Configuration
+public class BatchJdbcUnitTestConfiguration {
+
+    public static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    public static final String JOB_NAME = "batchJdbcUnitTestConfiguration";
+    public static final String PREFIX_BEAN = JOB_NAME + "_";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final DataSource dataSource;
+
+    private int chunkSize;
+
+    @Value("${chunkSize: 1000}")
+    public void setChunkSize(int chunkSize) {
+        this.chunkSize = chunkSize;
+    }
+
+    @Bean(JOB_NAME)
+    public Job job() throws Exception {
+        return jobBuilderFactory.get(JOB_NAME)
+                .start(step())
+                .build();
+    }
+
+    @Bean(PREFIX_BEAN + "step")
+    public Step step() throws Exception{
+        return stepBuilderFactory.get(PREFIX_BEAN + "step")
+                .<SalesSum, SalesSum>chunk(chunkSize)
+                .reader(reader(null))
+                .writer(writer())
+                .build();
+    }
+    
+    @Bean(PREFIX_BEAN + "reader")
+    @StepScope
+    public JdbcPagingItemReader<SalesSum> reader(@Value("#{jobParameters[orderDate]}") String orderDate) throws Exception {
+        Map<String, Object> params = new HashMap<>();
+        params.put("orderDate", LocalDate.parse(orderDate, FORMATTER));
+
+        SqlPagingQueryProviderFactoryBean queryProvider = new SqlPagingQueryProviderFactoryBean();
+        queryProvider.setDataSource(dataSource);
+        queryProvider.setSelectClause("order_date, sum(amount) as amount_sum");
+        queryProvider.setFromClause("from sales");
+        queryProvider.setWhereClause("where order_date =:orderDate");
+        queryProvider.setGroupClause("group by order_date");
+        queryProvider.setSortKey("order_date");
+
+        return new JdbcPagingItemReaderBuilder<SalesSum>()
+                .name(PREFIX_BEAN + "reader")
+                .pageSize(chunkSize)
+                .fetchSize(chunkSize)
+                .dataSource(dataSource)
+                .rowMapper(new BeanPropertyRowMapper<>(SalesSum.class))
+                .queryProvider(queryProvider.getObject())
+                .parameterValues(params)
+                .build();
+    }
+
+    @Bean(PREFIX_BEAN + "writer")
+    public JdbcBatchItemWriter<SalesSum> writer() {
+        return new JdbcBatchItemWriterBuilder<SalesSum>()
+                .dataSource(dataSource)
+                .sql("insert into sales_sum(order_date, amount_sum) values (:order_date, :amount_sum)")
+                .beanMapped()
+                .build();
+    }
+}
+```
+
+- StepScope가 필요없는 단위 테스트에서 Job/Step/Writer가 추가된 코드입니다.  
+- 다만 실제로 수행될 코드는 Reader 뿐입니다.  
+
+###### BatchJdbcUnitTestConfigurationTest.java
+```java
+package com.hansoleee.basicspringbatch.job;
+
+import com.hansoleee.basicspringbatch.entity.SalesSum;
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.runner.RunWith;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.item.database.JdbcPagingItemReader;
+import org.springframework.batch.test.MetaDataInstanceFactory;
+import org.springframework.batch.test.StepScopeTestExecutionListener;
+import org.springframework.batch.test.context.SpringBatchTest;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.jdbc.core.JdbcOperations;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseFactory;
+import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.jdbc.datasource.init.DataSourceInitializer;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestExecutionListeners;
+import org.springframework.test.context.junit4.SpringRunner;
+import org.springframework.test.context.support.DependencyInjectionTestExecutionListener;
+
+import javax.sql.DataSource;
+import java.time.LocalDate;
+
+import static com.hansoleee.basicspringbatch.job.BatchJdbcUnitTestConfiguration.FORMATTER;
+
+@RunWith(SpringRunner.class)
+@SpringBatchTest
+@EnableBatchProcessing // (1)
+@TestExecutionListeners({ // (2)
+        DependencyInjectionTestExecutionListener.class,
+        StepScopeTestExecutionListener.class
+})
+@ContextConfiguration(classes = { // (3)
+        BatchJdbcUnitTestConfiguration.class,
+        BatchJdbcUnitTestConfigurationTest.TestDataSourceConfiguration.class
+})
+class BatchJdbcUnitTestConfigurationTest {
+
+    @Autowired
+    private JdbcPagingItemReader<SalesSum> reader;
+    @Autowired
+    private DataSource dataSource;
+
+    private JdbcOperations jdbcTemplate;
+    private LocalDate orderDate = LocalDate.of(2021, 9, 11);
+
+    // (4)
+    public StepExecution getStepExecution() {
+        JobParameters jobParameters = new JobParametersBuilder()
+                .addString("orderDate", this.orderDate.format(FORMATTER))
+                .toJobParameters();
+
+        return MetaDataInstanceFactory.createStepExecution(jobParameters);
+    }
+
+    @BeforeEach // (5)
+    public void setUp() throws Exception {
+        this.reader.setDataSource(this.dataSource);
+        this.jdbcTemplate = new JdbcTemplate(this.dataSource);
+    }
+
+    @AfterEach // (6)
+    public void tearDown() throws Exception {
+        this.jdbcTemplate.update("delete from `sales`");
+    }
+
+    @Test
+    void 기간내_Sales가_집계되어_SalesSum이_된다() throws Exception {
+        //given
+        long amount1 = 1000;
+        long amount2 = 500;
+        long amount3 = 100;
+
+        saveSales(amount1, "1");
+        saveSales(amount2, "2");
+        saveSales(amount3, "3");
+
+        Assertions.assertThat(reader.read().getAmountSum()).isEqualTo(amount1 + amount2 + amount3);
+        Assertions.assertThat(reader.read()).isEqualTo(null);
+    }
+
+    private void saveSales(long amount, String orderNo) {
+        jdbcTemplate.update("insert into `sales` (order_date, amount, order_no) values (?, ?, ?)", this.orderDate, amount, orderNo);
+    }
+
+    // (7)
+    @Configuration
+    static class TestDataSourceConfiguration {
+        public static final String CREATE_SQL =
+                "create table IF NOT EXISTS `sales` (" +
+                        "id bigint not null auto_increment primary key, " +
+                        "amount bigint not null, " +
+                        "order_date date, " +
+                        "order_no varchar(255)" +
+                        ");";
+
+        @Bean
+        public DataSource dataSource() {
+            EmbeddedDatabaseFactory databaseFactory = new EmbeddedDatabaseFactory();
+            databaseFactory.setDatabaseType(EmbeddedDatabaseType.H2);
+            return databaseFactory.getDatabase();
+        }
+
+        @Bean
+        public DataSourceInitializer initializer(DataSource dataSource) {
+            DataSourceInitializer dataSourceInitializer = new DataSourceInitializer();
+            dataSourceInitializer.setDataSource(dataSource);
+
+            Resource create = new ByteArrayResource(CREATE_SQL.getBytes());
+            dataSourceInitializer.setDatabasePopulator(new ResourceDatabasePopulator(create));
+
+            return dataSourceInitializer;
+        }
+    }
+}
+```
+
+(1) `@EnableBatchProcessing`
+- 배치 환경을 자동 설정합니다.
+- 통합 테스트와 마찬가지로 별도의 테스트 설정 클래스 (ex: `TestBatchConfig.class`)를 생성해 해당 클래스에 선언해서 `import`해도 됩니다.
+
+(2) `@TestExecutionListeners({...})`
+- `TestContextManager`에 **어떤 TestExecutionListener들이 등록되어야 하는지** 설정할 수 있게 지원합니다.  
+- 즉, 스프링의 테스트 환경에서 내가 필요한 여러 리스너들을 사용할 수 있게 등록하는 역할을 합니다.  
+- 여기서는 2개의 리스너가 사용됩니다.  
+  - `DependencyInjectioinTestExecutionListener.class`
+  - 스프링 케스트 환경에서 일반적으로 사용되는 의존성 주입 (DI) 리스너입니다.  
+  - 테스트 인스턴스에 대한 의존성 주입(DI)을 제공합니다.  
+  - `StepScopeTestExecutionListener.class`
+  - 이번 챕터의 가장 **핵심이 되는 설정**입니다.  
+  - 테스트 케이스에서 **팩토리 메소드**(여기서는 `getStepExecution()`)를 찾아서 팩토리 메소드에서 반환된 `SetpExecution`을 **각 테스트 메소드의 StepExecution**으로 사용합니다.  
+  - `StepExecution`를 반환하는 메소드가 **팩토리 메소드**입니다.  
+  - 팩토리 메소드가 없으면 기본 StepExecution이 생성됩니다.  
+
+(3) `@ContextConfiguration(classes = {...})`
+- 테스트를 수행할 때 Import할 Config 클래스들을 등록합니다.  
+- `BatchJdbcUnitTestConfiguration.class`
+  - 테스트 대상이 되는 Batch Job Config 클래스입니다.
+- `BatchJdbcUnitTestConfigurationTest.TestDataSourceConfiguration.class`
+  - **테스트 코드가 수행되는 환경**을 만들어주는 Config 클래스입니다.  
+  - `DataSource` Bean 생성
+  - `create table`
+  - 등을 담당합니다.
+
+(4) `getStepExecution()`
+- `StepScopeTestExecutionListener`가 사용하는 **팩토리 메소드**입니다.  
+- 여기서 반환하는 `StepExecution`가 테스트에서 사용되는 Reader의 **Step 환경**이 됩니다.  
+- 아래에서 더 자세히 알아보겠습니다.  
+
+(5) `setUp()`
+- Bean으로 등록된 Reader와 `insert`를 비롯한 쿼리를 수행할 `JdbcOperations`에 동일한 DataSource를 등록합니다.  
+
+(6) `tearDown()`
+- 여러 테스트들이 동시에 수행될 경우를 대비해 `insert`로 데이터가 저장된 `sales` 테이블을 초기화합니다.  
+- 이렇게해야만 테스트가 끝날때마다 `sales` 테이블이 깨끗하게 비어있어 **다른 테스트에 영향이 없습니다.**
+
+(7) `@Configuration TestDataSourceConfiguration`
+- **테스트 환경 Config 클래스** 역할을 합니다.
+
+테스트 수행 결과는 아래와 같습니다.
+![](images/BatchJdbcUnitTestConfigurationTest실행결과01.png)
+
+코드를 보시면 StepScopeTestExecutionListener 클래스는 `getStepExecution()`를 어떻게 찾고, `StepExecution`를 교체하는 걸까요?
+
+### StepScopeTestExecutionListener ?
+StepScopeTestExecutionListener 클래스의 코드를 열어보시면 아래와 같이 `getStepExecution` 메소드가 있습니다.  
+위 작성한 테스트 클래스(BatchJdbcUnitTestConfigurationTest.java)에서 작성한 메소드와 같은 이름이죠?
+
+이 메소드의 코드는 다음과 같습니다.
+```java
+public class StepScopeTestExecutionListener implements TestExecutionListener {
+  ...
+  protected StepExecution getStepExecution(TestContext testContext) {
+    Object target;
+
+    try {
+      Method method = TestContext.class.getMethod(GET_TEST_INSTANCE_METHOD);
+      target = ReflectionUtils.invokeMethod(method, testContext);
+    } catch (NoSuchMethodException e) {
+      throw new IllegalStateException("No such method " + GET_TEST_INSTANCE_METHOD + " on provided TestContext", e);
+    }
+
+    ExtractorMethodCallback method = new ExtractorMethodCallback(StepExecution.class, "getStepExecution");
+    ReflectionUtils.doWithMethods(target.getClass(), method);
+    if (method.getName() != null) {
+      HippyMethodInvoker invoker = new HippyMethodInvoker();
+      invoker.setTargetObject(target);
+      invoker.setTargetMethod(method.getName());
+      try {
+        invoker.prepare();
+        return (StepExecution) invoker.invoke();
+      }
+      catch (Exception e) {
+        throw new IllegalArgumentException("Could not create step execution from method: " + method.getName(),
+                e);
+      }
+    }
+
+    return MetaDataInstanceFactory.createStepExecution();
+  }
+  ...
+}
+```
+
+여기서 중요한 코드는 `Reflectionutils.doWithMethods(target.getClass(), method)`입니다.  
+테스트 코드를 수행해서 디버깅을 진행해보면 **위 메소드를 통해 팩토리 메소드를 찾는다는 것**을 알 수 있습니다.  
+
+![](images/StepScopeTestExecutionListener디버그실행결과01.png)
+
+그리고 이렇게 찾은 메소드를 `Invoker`를 이용해 실행합니다.
+
+![](images/StepScopeTestExecution코드01.png)
+
+팩토리 메소드는 `preferredName`을 통해 찾는 것 같습니다.
+```java
+new ExtractormethodCallback(StepExecution.class, "getStepExecution")
+```
+
+즉, `getStepExecution`이라는 **메소드 이름으로 찾는 것** 같습니다.  
+만약 `getStepExecution`이란 이름이 아니면 어떻게 될까요?  
+아래와 같이 테스트 클래스의 메소드 명을 `getStepExecution`에서 `getStepExecution2`로 변경해 보겠습니다.  
+```java
+public StepExecution getStepExecutionV2() {
+    JobParameters jobParameters = new JobParametersBuilder()
+    .addString("orderDate", this.orderDate.format(FORMATTER))
+    .toJobParameters();
+
+    return MetaDataInstanceFactory.createStepExecution(jobParameters);
+}
+```
+
+그리고 테스트 코드를 디버깅한 결과는 아래와 같습니다.  
+
+![](images/StepScopeTestExecutionListener디버그실행결과02.png)
+
+![](images/BatchJdbcUnitTestConfigurationTest실행결과02.png)
+
+즉, **메소드 이름과 무관하게 StepExecution를 반환하는 메소드**를 팩토리 메소드로 사용한다는 것을 알 수 있습니다.

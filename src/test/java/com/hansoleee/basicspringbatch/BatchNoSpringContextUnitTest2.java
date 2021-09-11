@@ -2,7 +2,6 @@ package com.hansoleee.basicspringbatch;
 
 import com.hansoleee.basicspringbatch.entity.SalesSum;
 import com.hansoleee.basicspringbatch.job.BatchOnlyJdbcReaderTestConfiguration;
-import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -38,7 +37,7 @@ public class BatchNoSpringContextUnitTest2 {
         this.context = new AnnotationConfigApplicationContext(TestDataSourceConfiguration.class); // (1)
         this.dataSource = (DataSource) context.getBean("dataSource"); // (2)
         this.jdbcTemplate = new JdbcTemplate(this.dataSource); // (3)
-        this.orderDate = LocalDate.of(2021, 9, 10);
+        this.orderDate = LocalDate.of(2021, 9, 11);
         this.job = new BatchOnlyJdbcReaderTestConfiguration(dataSource); // (4)
         this.job.setChunkSize(10);
     }
